@@ -31,6 +31,34 @@ app.use(passport.initialize());
 
 var router = express.Router();
 
+// Google Analytics tracking function
+const rp = require('request-promise');
+const crypto = require('crypto');
+
+const GA_TRACKING_ID = process.env.GA_KEY; // Ensure this is set in your environment (e.g., UA-XXXXXXXX-X)
+
+function trackDimension(category, action, label, value, dimension, metric) {
+  var options = { 
+    method: 'GET',
+    url: 'https://www.google-analytics.com/collect',
+    qs: {
+      v: '1',                    
+      tid: 'G-DNGWDHXVDF',       
+      cid: crypto.randomBytes(16).toString("hex"), 
+      t: 'event',                
+      ec: category,             
+      ea: action,                
+      el: label,                 
+      ev: value,                 
+      cd1: dimension,            
+      cm1: metric                
+    },
+    headers: { 'Cache-Control': 'no-cache' }
+  };
+
+  return rp(options);
+}
+
 function getJSONObjectForMovieRequirement(req) {
     var json = {
         headers: "No headers",
@@ -94,9 +122,7 @@ router.post('/signin', function (req, res) {
     })
 });
 
-// -------------------------
 // Movie Routes
-// -------------------------
 
 // POST /movies: Create a new movie then return all movies
 router.post('/movies', authJwtController.isAuthenticated, (req, res) => {
@@ -130,9 +156,9 @@ router.post('/movies', authJwtController.isAuthenticated, (req, res) => {
         { $match: { _id: movieId } },
         {
           $lookup: {
-            from: 'reviews',        // must match the collection name exactly
+            from: 'reviews',        
             localField: '_id',
-            foreignField: 'movieId', // ensure you use the same field name as in your Reviews model
+            foreignField: 'movieId',
             as: 'reviews'
           }
         }
@@ -150,18 +176,16 @@ router.post('/movies', authJwtController.isAuthenticated, (req, res) => {
     }
   });
   
-  // -------------------------
-  // Review Routes
-  // -------------------------
   
+  // Review Routes
   // POST /reviews: Create a review for a movie (JWT-protected)
-router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
+  router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
     // Ensure required fields are present
     if (!req.body.movieId || !req.body.review || !req.body.rating) {
       return res.status(400).json({ message: 'Missing required fields: movieId, review, and rating.' });
     }
     
-    // If username is not provided in the request, use the authenticated user's username.
+    // If username is not provided, use the authenticated user's username.
     if (!req.body.username && req.user && req.user.username) {
       req.body.username = req.user.username;
     }
@@ -174,14 +198,32 @@ router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
       // Create the review document
       Review.create(req.body, (err, review) => {
         if (err) return res.status(500).json(err);
-        res.status(200).json({ message: 'Review created!' });
+        
+        // Trigger custom analytics event after review creation.
+        // For example:
+        trackDimension(
+          movie.genre || 'Unknown',      // Event Category: Use the movie genre, e.g., "Western"
+          'POST /reviews',               // Event Action: URL path (or method) for posting a review
+          'API Request for Movie Review',// Event Label: Description of the event
+          '1',                           // Event Value: Must be numeric, sent as a string
+          movie.title,                   // Custom Dimension: Movie Name
+          '1'                            // Custom Metric: Value 1 (to aggregate review counts)
+        )
+        .then(() => {
+          res.status(200).json({ message: 'Review created!' });
+        })
+        .catch(analyticsError => {
+          console.error('Analytics tracking error:', analyticsError);
+          // Even if analytics tracking fails, still return success for review creation.
+          res.status(200).json({ message: 'Review created!' });
+        });
       });
     });
-  });
+});
 
 app.use('/', router);
 app.listen(process.env.PORT || 8080);
-module.exports = app; // for testing only
+module.exports = app;
 console.log("DB:", process.env.DB);
 
 
