@@ -4,7 +4,7 @@ var ExtractJwt = require('passport-jwt').ExtractJwt;
 var User = require('./Users');
 
 var opts = {};
-opts.jwtFromRequest = ExtractJwt.fromAuthHeaderWithScheme("jwt");
+opts.jwtFromRequest = ExtractJwt.fromAuthHeaderWithScheme("JWT");
 opts.secretOrKey = process.env.SECRET_KEY;
 
 passport.use(new JwtStrategy(opts, function(jwt_payload, done) {
