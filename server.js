@@ -2,7 +2,7 @@
 CSC3916 HW4
 File: Server.js
 Description: Web API scaffolding for Movie API
- */
+*/
 
 require('dotenv').config(); 
 var express = require('express');
@@ -47,11 +47,11 @@ function trackDimension(category, action, label, value, dimension, metric) {
       cid: crypto.randomBytes(16).toString("hex"), 
       t: 'event',                
       ec: category,             
-      ea: action,                
-      el: label,                 
-      ev: value,                 
-      cd1: dimension,            
-      cm1: metric                
+      ea: action,               
+      el: label,                
+      ev: value,                
+      cd1: dimension,           
+      cm1: metric               
     },
     headers: { 'Cache-Control': 'no-cache' }
   };
@@ -133,98 +133,127 @@ router.post('/movies', authJwtController.isAuthenticated, (req, res) => {
         res.status(200).json(movies);
       });
     });
-  });
-  
-  // GET /movies: Return all movies (as an array)
-  router.get('/movies', (req, res) => {
+});
+
+// GET /movies: Return all movies (as an array), with optional aggregation & sorting
+router.get('/movies', authJwtController.isAuthenticated, (req, res) => {
+  if (req.query.reviews === 'true') {
+    // Aggregate reviews, compute avgRating, then sort descending by avgRating
+    Movie.aggregate([
+      {
+        $lookup: {
+          from: 'reviews',        
+          localField: '_id',
+          foreignField: 'movieId',
+          as: 'reviews'
+        }
+      },
+      {
+        $addFields: {
+          avgRating: { $avg: '$reviews.rating' }
+        }
+      },
+      {
+        $sort: { avgRating: -1 }
+      }
+    ]).exec((err, movies) => {
+      if (err) return res.status(500).json(err);
+      res.status(200).json(movies);
+    });
+  } else {
+    // Fallback: return all movies without reviews
     Movie.find({}, (err, movies) => {
       if (err) return res.status(500).json(err);
       res.status(200).json(movies);
     });
-  });
-  
-  // GET /movies/:id: Return a specific movie. If ?reviews=true, aggregate reviews.
-  router.get('/movies/:id', (req, res) => {
-    let movieId;
-    try {
-      movieId = mongoose.Types.ObjectId(req.params.id);
-    } catch (error) {
-      return res.status(400).json({ message: 'Invalid movie ID format.' });
-    }
-    if (req.query.reviews === 'true') {
-      Movie.aggregate([
-        { $match: { _id: movieId } },
-        {
-          $lookup: {
-            from: 'reviews',        
-            localField: '_id',
-            foreignField: 'movieId',
-            as: 'reviews'
-          }
+  }
+});
+
+// GET /movies/:id: Return a specific movie. If ?reviews=true, aggregate reviews and avgRating.
+router.get('/movies/:id', authJwtController.isAuthenticated, (req, res) => {
+  let movieId;
+  try {
+    movieId = mongoose.Types.ObjectId(req.params.id);
+  } catch (error) {
+    return res.status(400).json({ message: 'Invalid movie ID format.' });
+  }
+
+  if (req.query.reviews === 'true') {
+    // Aggregate single movie with its reviews and compute avgRating
+    Movie.aggregate([
+      { $match: { _id: movieId } },
+      {
+        $lookup: {
+          from: 'reviews',
+          localField: '_id',
+          foreignField: 'movieId',
+          as: 'reviews'
         }
-      ]).exec((err, movie) => {
-        if (err) return res.status(500).json(err);
-        if (!movie || movie.length === 0) return res.status(404).json({ message: 'Movie not found.' });
-        res.status(200).json(movie[0]);
-      });
-    } else {
-      Movie.findById(movieId, (err, movie) => {
-        if (err) return res.status(500).json(err);
-        if (!movie) return res.status(404).json({ message: 'Movie not found.' });
-        res.status(200).json(movie);
-      });
-    }
-  });
-  
-  
-  // Review Routes
-  // POST /reviews: Create a review for a movie (JWT-protected)
-  router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
-    // Ensure required fields are present
-    if (!req.body.movieId || !req.body.review || !req.body.rating) {
-      return res.status(400).json({ message: 'Missing required fields: movieId, review, and rating.' });
-    }
-    
-    // If username is not provided, use the authenticated user's username.
-    if (!req.body.username && req.user && req.user.username) {
-      req.body.username = req.user.username;
-    }
-    
-    // Verify that the movie exists
-    Movie.findById(req.body.movieId, (err, movie) => {
+      },
+      {
+        $addFields: {
+          avgRating: { $avg: '$reviews.rating' }
+        }
+      }
+    ]).exec((err, movie) => {
       if (err) return res.status(500).json(err);
-      if (!movie) return res.status(404).json({ message: 'Movie not found' });
+      if (!movie || movie.length === 0) return res.status(404).json({ message: 'Movie not found.' });
+      res.status(200).json(movie[0]);
+    });
+  } else {
+    // Return just the movie document
+    Movie.findById(movieId, (err, movie) => {
+      if (err) return res.status(500).json(err);
+      if (!movie) return res.status(404).json({ message: 'Movie not found.' });
+      res.status(200).json(movie);
+    });
+  }
+});
+
+// Review Routes
+// POST /reviews: Create a review for a movie (JWT-protected)
+router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
+  // Ensure required fields are present
+  if (!req.body.movieId || !req.body.review || !req.body.rating) {
+    return res.status(400).json({ message: 'Missing required fields: movieId, review, and rating.' });
+  }
+  
+  // If username is not provided, use the authenticated user's username.
+  if (!req.body.username && req.user && req.user.username) {
+    req.body.username = req.user.username;
+  }
+  
+  // Verify that the movie exists
+  Movie.findById(req.body.movieId, (err, movie) => {
+    if (err) return res.status(500).json(err);
+    if (!movie) return res.status(404).json({ message: 'Movie not found' });
+    
+    // Create the review document
+    Review.create(req.body, (err, review) => {
+      if (err) return res.status(500).json(err);
       
-      // Create the review document
-      Review.create(req.body, (err, review) => {
-        if (err) return res.status(500).json(err);
-        
-        // Trigger custom analytics event after review creation.
-        // For example:
-        trackDimension(
-          movie.genre || 'Unknown',      // Event Category: Use the movie genre, e.g., "Western"
-          'POST /reviews',               // Event Action: URL path (or method) for posting a review
-          'API Request for Movie Review',// Event Label: Description of the event
-          '1',                           // Event Value: Must be numeric, sent as a string
-          movie.title,                   // Custom Dimension: Movie Name
-          '1'                            // Custom Metric: Value 1 (to aggregate review counts)
-        )
-        .then(() => {
-          res.status(200).json({ message: 'Review created!' });
-        })
-        .catch(analyticsError => {
-          console.error('Analytics tracking error:', analyticsError);
-          // Even if analytics tracking fails, still return success for review creation.
-          res.status(200).json({ message: 'Review created!' });
-        });
+      // Trigger custom analytics event after review creation.
+      trackDimension(
+        movie.genre || 'Unknown',      // Event Category: Use the movie genre, e.g., "Western"
+        'POST /reviews',               // Event Action: URL path (or method) for posting a review
+        'API Request for Movie Review',// Event Label: Description of the event
+        '1',                           // Event Value: Must be numeric, sent as a string
+        movie.title,                   // Custom Dimension: Movie Name
+        '1'                            // Custom Metric: Value 1 (to aggregate review counts)
+      )
+      .then(() => {
+        res.status(200).json({ message: 'Review created!' });
+      })
+      .catch(analyticsError => {
+        console.error('Analytics tracking error:', analyticsError);
+        // Even if analytics tracking fails, still return success for review creation.
+        res.status(200).json({ message: 'Review created!' });
       });
     });
+  });
 });
 
 app.use('/', router);
 app.listen(process.env.PORT || 8080);
 module.exports = app;
 console.log("DB:", process.env.DB);
-
-
-
