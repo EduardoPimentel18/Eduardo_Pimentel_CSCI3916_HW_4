@@ -253,6 +253,35 @@ router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
   });
 });
 
+// POST /movies/search: Search movies by partial title or actor name
+router.post(
+  '/movies/search',
+  authJwtController.isAuthenticated,      // require JWT
+  (req, res) => {
+    const { query } = req.body;
+    if (!query) {
+      // missing search term
+      return res.status(400).json({ message: 'Missing required field: query' });
+    }
+
+    // case‑insensitive regex for partial matches
+    const regex = new RegExp(query, 'i');
+
+    Movie.find(
+      {
+        $or: [
+          { title: regex },                   // match in title
+          { 'actors.actorName': regex }       // match in any actor’s name
+        ]
+      },
+      (err, movies) => {
+        if (err) return res.status(500).json(err);
+        res.status(200).json(movies);
+      }
+    );
+  }
+);
+
 app.use('/', router);
 app.listen(process.env.PORT || 8080);
 module.exports = app;
