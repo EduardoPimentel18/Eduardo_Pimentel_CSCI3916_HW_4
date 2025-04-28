@@ -4,18 +4,18 @@ File: Server.js
 Description: Web API scaffolding for Movie API
 */
 
-require('dotenv').config(); 
-var express = require('express');
-var bodyParser = require('body-parser');
-var passport = require('passport');
-var authController = require('./auth');
+require('dotenv').config();
+var express           = require('express');
+var bodyParser        = require('body-parser');
+var passport          = require('passport');
+var authController    = require('./auth');
 var authJwtController = require('./auth_jwt');
-var jwt = require('jsonwebtoken');
-var cors = require('cors');
-var User = require('./Users');
-var Movie = require('./Movies');
-var Review = require('./Reviews');
-var mongoose = require('mongoose'); 
+var jwt               = require('jsonwebtoken');
+var cors              = require('cors');
+var User              = require('./Users');
+var Movie             = require('./Movies');
+var Review            = require('./Reviews');
+var mongoose          = require('mongoose');
 
 // Connect to MongoDB with proper options
 mongoose.connect(process.env.DB, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -32,26 +32,26 @@ app.use(passport.initialize());
 var router = express.Router();
 
 // Google Analytics tracking function
-const rp = require('request-promise');
+const rp     = require('request-promise');
 const crypto = require('crypto');
 
 const GA_TRACKING_ID = process.env.GA_KEY; // Ensure this is set in your environment (e.g., UA-XXXXXXXX-X)
 
 function trackDimension(category, action, label, value, dimension, metric) {
-  var options = { 
+  var options = {
     method: 'GET',
     url: 'https://www.google-analytics.com/collect',
     qs: {
-      v: '1',                    
+      v:  '1',                    
       tid: 'G-DNGWDHXVDF',       
-      cid: crypto.randomBytes(16).toString("hex"), 
-      t: 'event',                
-      ec: category,             
-      ea: action,               
-      el: label,                
-      ev: value,                
-      cd1: dimension,           
-      cm1: metric               
+      cid: crypto.randomBytes(16).toString("hex"),
+      t:  'event',
+      ec: category,
+      ea: action,
+      el: label,
+      ev: value,
+      cd1: dimension,
+      cm1: metric
     },
     headers: { 'Cache-Control': 'no-cache' }
   };
@@ -60,79 +60,79 @@ function trackDimension(category, action, label, value, dimension, metric) {
 }
 
 function getJSONObjectForMovieRequirement(req) {
-    var json = {
-        headers: "No headers",
-        key: process.env.UNIQUE_KEY,
-        body: "No body"
-    };
+  var json = {
+    headers: "No headers",
+    key:     process.env.UNIQUE_KEY,
+    body:    "No body"
+  };
 
-    if (req.body != null) {
-        json.body = req.body;
-    }
+  if (req.body != null)    json.body    = req.body;
+  if (req.headers != null) json.headers = req.headers;
 
-    if (req.headers != null) {
-        json.headers = req.headers;
-    }
-
-    return json;
+  return json;
 }
 
+// ────────────────────────────────────────────────────────────
+// Auth Routes
+// ────────────────────────────────────────────────────────────
+
 router.post('/signup', function(req, res) {
-    if (!req.body.username || !req.body.password) {
-        res.json({success: false, msg: 'Please include both username and password to signup.'})
-    } else {
-        var user = new User();
-        user.name = req.body.name;
-        user.username = req.body.username;
-        user.password = req.body.password;
+  if (!req.body.username || !req.body.password) {
+    res.json({ success: false, msg: 'Please include both username and password to signup.' });
+  } else {
+    var user = new User();
+    user.name     = req.body.name;
+    user.username = req.body.username;
+    user.password = req.body.password;
 
-        user.save(function(err){
-            if (err) {
-                if (err.code == 11000)
-                    return res.json({ success: false, message: 'A user with that username already exists.'});
-                else
-                    return res.json(err);
-            }
+    user.save(function(err) {
+      if (err) {
+        if (err.code == 11000)
+          return res.json({ success: false, message: 'A user with that username already exists.' });
+        else
+          return res.json(err);
+      }
 
-            res.json({success: true, msg: 'Successfully created new user.'})
-        });
-    }
+      res.json({ success: true, msg: 'Successfully created new user.' });
+    });
+  }
 });
 
 router.post('/signin', function (req, res) {
-    var userNew = new User();
-    userNew.username = req.body.username;
-    userNew.password = req.body.password;
+  var userNew      = new User();
+  userNew.username = req.body.username;
+  userNew.password = req.body.password;
 
-    User.findOne({ username: userNew.username }).select('name username password').exec(function(err, user) {
-        if (err) {
-            res.send(err);
+  User.findOne({ username: userNew.username })
+    .select('name username password')
+    .exec(function(err, user) {
+      if (err) return res.send(err);
+
+      user.comparePassword(userNew.password, function(isMatch) {
+        if (isMatch) {
+          var userToken = { id: user.id, username: user.username };
+          var token     = jwt.sign(userToken, process.env.SECRET_KEY);
+          res.json({ success: true, token: 'JWT ' + token });
+        } else {
+          res.status(401).send({ success: false, msg: 'Authentication failed.' });
         }
-
-        user.comparePassword(userNew.password, function(isMatch) {
-            if (isMatch) {
-                var userToken = { id: user.id, username: user.username };
-                var token = jwt.sign(userToken, process.env.SECRET_KEY);
-                res.json ({success: true, token: 'JWT ' + token});
-            }
-            else {
-                res.status(401).send({success: false, msg: 'Authentication failed.'});
-            }
-        })
-    })
+      });
+    });
 });
 
+// ────────────────────────────────────────────────────────────
 // Movie Routes
+// ────────────────────────────────────────────────────────────
 
 // POST /movies: Create a new movie then return all movies
 router.post('/movies', authJwtController.isAuthenticated, (req, res) => {
-    Movie.create(req.body, (err, movie) => {
+  Movie.create(req.body, (err, movie) => {
+    if (err) return res.status(500).json(err);
+    Movie.find({}, (err, movies) => {
       if (err) return res.status(500).json(err);
-      Movie.find({}, (err, movies) => {
-        if (err) return res.status(500).json(err);
-        res.status(200).json(movies);
-      });
+      res.status(200).json(movies);
     });
+  });
 });
 
 // GET /movies: Return all movies (as an array), with optional aggregation & sorting
@@ -140,22 +140,16 @@ router.get('/movies', authJwtController.isAuthenticated, (req, res) => {
   if (req.query.reviews === 'true') {
     // Aggregate reviews, compute avgRating, then sort descending by avgRating
     Movie.aggregate([
-      {
-        $lookup: {
-          from: 'reviews',        
-          localField: '_id',
+      { $lookup: {
+          from:         'reviews',
+          localField:   '_id',
           foreignField: 'movieId',
-          as: 'reviews'
-        }
-      },
-      {
-        $addFields: {
+          as:           'reviews'
+      }},
+      { $addFields: {
           avgRating: { $avg: '$reviews.rating' }
-        }
-      },
-      {
-        $sort: { avgRating: -1 }
-      }
+      }},
+      { $sort: { avgRating: -1 } }
     ]).exec((err, movies) => {
       if (err) return res.status(500).json(err);
       res.status(200).json(movies);
@@ -179,29 +173,24 @@ router.get('/movies/:id', authJwtController.isAuthenticated, (req, res) => {
   }
 
   if (req.query.reviews === 'true') {
-    // Aggregate single movie with its reviews and compute avgRating
     Movie.aggregate([
       { $match: { _id: movieId } },
-      {
-        $lookup: {
-          from: 'reviews',
-          localField: '_id',
+      { $lookup: {
+          from:         'reviews',
+          localField:   '_id',
           foreignField: 'movieId',
-          as: 'reviews'
-        }
-      },
-      {
-        $addFields: {
+          as:           'reviews'
+      }},
+      { $addFields: {
           avgRating: { $avg: '$reviews.rating' }
-        }
-      }
+      }}
     ]).exec((err, movie) => {
       if (err) return res.status(500).json(err);
-      if (!movie || movie.length === 0) return res.status(404).json({ message: 'Movie not found.' });
+      if (!movie || movie.length === 0)
+        return res.status(404).json({ message: 'Movie not found.' });
       res.status(200).json(movie[0]);
     });
   } else {
-    // Return just the movie document
     Movie.findById(movieId, (err, movie) => {
       if (err) return res.status(500).json(err);
       if (!movie) return res.status(404).json({ message: 'Movie not found.' });
@@ -210,68 +199,70 @@ router.get('/movies/:id', authJwtController.isAuthenticated, (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────────────────
 // Review Routes
+// ────────────────────────────────────────────────────────────
+
 // POST /reviews: Create a review for a movie (JWT-protected)
 router.post('/reviews', authJwtController.isAuthenticated, (req, res) => {
-  // Ensure required fields are present
   if (!req.body.movieId || !req.body.review || !req.body.rating) {
-    return res.status(400).json({ message: 'Missing required fields: movieId, review, and rating.' });
+    return res.status(400).json({
+      message: 'Missing required fields: movieId, review, and rating.'
+    });
   }
-  
-  // If username is not provided, use the authenticated user's username.
+
   if (!req.body.username && req.user && req.user.username) {
     req.body.username = req.user.username;
   }
-  
-  // Verify that the movie exists
+
   Movie.findById(req.body.movieId, (err, movie) => {
     if (err) return res.status(500).json(err);
     if (!movie) return res.status(404).json({ message: 'Movie not found' });
-    
-    // Create the review document
+
     Review.create(req.body, (err, review) => {
       if (err) return res.status(500).json(err);
-      
-      // Trigger custom analytics event after review creation.
+
       trackDimension(
-        movie.genre || 'Unknown',      // Event Category: Use the movie genre, e.g., "Western"
-        'POST /reviews',               // Event Action: URL path (or method) for posting a review
-        'API Request for Movie Review',// Event Label: Description of the event
-        '1',                           // Event Value: Must be numeric, sent as a string
-        movie.title,                   // Custom Dimension: Movie Name
-        '1'                            // Custom Metric: Value 1 (to aggregate review counts)
+        movie.genre || 'Unknown',        // Event Category
+        'POST /reviews',                 // Event Action
+        'API Request for Movie Review',  // Event Label
+        '1',                             // Event Value
+        movie.title,                     // Custom Dimension
+        '1'                              // Custom Metric
       )
       .then(() => {
         res.status(200).json({ message: 'Review created!' });
       })
       .catch(analyticsError => {
         console.error('Analytics tracking error:', analyticsError);
-        // Even if analytics tracking fails, still return success for review creation.
         res.status(200).json({ message: 'Review created!' });
       });
     });
   });
 });
 
-// POST /movies/search: Search movies by partial title or actor name
+// ────────────────────────────────────────────────────────────
+// Search Route
+// ────────────────────────────────────────────────────────────
+
 router.post(
   '/movies/search',
-  authJwtController.isAuthenticated,      // require JWT
+  authJwtController.isAuthenticated,
   (req, res) => {
     const { query } = req.body;
     if (!query) {
-      // missing search term
-      return res.status(400).json({ message: 'Missing required field: query' });
+      return res.status(400).json({
+        message: 'Missing required field: query'
+      });
     }
 
-    // case‑insensitive regex for partial matches
     const regex = new RegExp(query, 'i');
 
     Movie.find(
       {
         $or: [
-          { title: regex },                   // match in title
-          { 'actors.actorName': regex }       // match in any actor’s name
+          { title: regex },
+          { 'actors.actorName': regex }
         ]
       },
       (err, movies) => {
@@ -279,6 +270,70 @@ router.post(
         res.status(200).json(movies);
       }
     );
+  }
+);
+
+// ────────────────────────────────────────────────────────────
+// ── NEW: Watchlist Routes (JWT-protected) ─────────────────
+// ────────────────────────────────────────────────────────────
+
+// GET /watchlist
+router.get(
+  '/watchlist',
+  authJwtController.isAuthenticated,
+  (req, res) => {
+    User.findById(req.user.id)
+      .populate('watchlist')
+      .exec((err, user) => {
+        if (err)   return res.status(500).json(err);
+        if (!user) return res.status(404).json({ message: 'User not found.' });
+        res.status(200).json(user.watchlist);
+      });
+  }
+);
+
+// POST /watchlist
+router.post(
+  '/watchlist',
+  authJwtController.isAuthenticated,
+  (req, res) => {
+    const { movieId } = req.body;
+    if (!movieId) return res.status(400).json({ message: 'Missing movieId.' });
+
+    Movie.findById(movieId, (err, movie) => {
+      if (err)    return res.status(500).json(err);
+      if (!movie) return res.status(404).json({ message: 'Movie not found.' });
+
+      User.findByIdAndUpdate(
+        req.user.id,
+        { $addToSet: { watchlist: movieId } },
+        { new: true }
+      )
+      .populate('watchlist')
+      .exec((err, user) => {
+        if (err)  return res.status(500).json(err);
+        res.status(200).json(user.watchlist);
+      });
+    });
+  }
+);
+
+// DELETE /watchlist/:movieId
+router.delete(
+  '/watchlist/:movieId',
+  authJwtController.isAuthenticated,
+  (req, res) => {
+    const movieId = req.params.movieId;
+    User.findByIdAndUpdate(
+      req.user.id,
+      { $pull: { watchlist: movieId } },
+      { new: true }
+    )
+    .populate('watchlist')
+    .exec((err, user) => {
+      if (err)  return res.status(500).json(err);
+      res.status(200).json(user.watchlist);
+    });
   }
 );
 
