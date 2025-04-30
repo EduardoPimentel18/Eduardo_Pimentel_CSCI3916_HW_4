@@ -274,21 +274,36 @@ router.post(
 );
 
 // ────────────────────────────────────────────────────────────
-// ── NEW: Watchlist Routes (JWT-protected) ─────────────────
+// Watchlist Routes (JWT-protected) 
 // ────────────────────────────────────────────────────────────
 
 // GET /watchlist
 router.get(
   '/watchlist',
   authJwtController.isAuthenticated,
-  (req, res) => {
-    User.findById(req.user.id)
-      .populate('watchlist')
-      .exec((err, user) => {
-        if (err)   return res.status(500).json(err);
-        if (!user) return res.status(404).json({ message: 'User not found.' });
-        res.status(200).json(user.watchlist);
-      });
+  async (req, res) => {
+    try {
+      // Load the user with populated watchlist
+      const user = await User.findById(req.user.id)
+        .populate('watchlist')
+        .exec();
+      if (!user) return res.status(404).json({ message: 'User not found.' });
+
+      // Compute avgRating for each movie
+      const moviesWithRating = await Promise.all(
+        user.watchlist.map(async movie => {
+          const reviews = await Review.find({ movieId: movie._id });
+          const avgRating = reviews.length
+            ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+            : null;
+          return { ...movie.toObject(), avgRating };
+        })
+      );
+
+      res.status(200).json(moviesWithRating);
+    } catch (err) {
+      res.status(500).json(err);
+    }
   }
 );
 
