@@ -20,7 +20,7 @@ var UserSchema = new Schema({
     username: { type: String, required: true, index: { unique: true } },
     password: { type: String, required: true, select: false },
 
-    // ── NEW: Each user has a watchlist of movie ObjectIds
+    // Each user has a watchlist of movie ObjectIds
     watchlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Movie' }]
 });
 
